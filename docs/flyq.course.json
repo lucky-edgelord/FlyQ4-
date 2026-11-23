@@ -1,0 +1,88 @@
+{
+  "format": "jade-course", "version": 1, "id": "flyq-101", "title": "FlyQ 101: a fly brain in 2 bits",
+  "subtitle": "How INT4 and ternary synapses simulate a real connectome, and why the ternary one over-fires",
+  "author": "FlyQ", "teacher": "jade",
+  "pronounce": { "INT4": "int four", "LUT": "lookup table", "Q16.16": "Q sixteen point sixteen", "FlyWire": "fly wire" },
+  "chapters": [
+    {
+      "title": "The fly brain is a graph",
+      "summary": ["A connectome is the complete wiring diagram of a brain.", "FlyWire v783 has 138,639 neurons and 15,091,983 directed connections, each with a synapse count and a sign."],
+      "keyPoints": ["Nodes are neurons; edges are synaptic connections.", "Weight = number of synapses, sign = excitatory (+) or inhibitory (−).", "The median connection is only 2 synapses; the strongest is 2,405.", "60% of edges are excitatory, 40% inhibitory."],
+      "glossary": [{ "term": "connectome", "def": "The full map of neurons and the synapses between them." }, { "term": "CSR", "def": "Compressed sparse row: for each neuron, a contiguous list of its outgoing edges." }],
+      "lesson": [
+        "A spiking simulation only needs to know, for every neuron that just fired, **who it talks to and how strongly**. That is exactly what a CSR graph stores: `indptr[u]..indptr[u+1]` is the slice of outgoing edges of neuron `u`.",
+        { "type": "table", "title": "FlyWire v783 weights (|synapse count|)", "head": ["percentile", "|w|"], "rows": [["50%", "2"], ["75%", "3"], ["90%", "7"], ["95%", "12"], ["99%", "32"], ["max", "2,405"]] },
+        "Most connections are weak. That fact drives everything that follows."
+      ],
+      "references": [{ "title": "FlyWire connectome data", "url": "https://github.com/eonsystemspbc/fly-brain", "note": "the v783 files used here" }],
+      "quiz": [
+        { "q": "What does edge weight mean in the FlyWire table?", "options": ["Spike rate", "Number of synapses, signed by neurotransmitter", "Axon length", "Membrane voltage"], "answer": 1, "explain": "`Excitatory x Connectivity` is the synapse count multiplied by +1 or −1." },
+        { "q": "Roughly what share of edges are inhibitory?", "options": ["5%", "40%", "95%"], "answer": 1, "explain": "About 40% are inhibitory and 60% excitatory." }
+      ],
+      "cards": [{ "q": "CSR in one sentence?", "a": "For every neuron, its outgoing edges stored contiguously, found through indptr." }, { "q": "Median |synapse count|?", "a": "2" }]
+    },
+    {
+      "title": "Neurons in integers",
+      "summary": ["Each neuron is a leaky integrate-and-fire unit in Q16.16 fixed point: 1 mV = 65536.", "Only 32-bit integers are needed, which is why the same maths runs on an ESP32 and in WebAssembly."],
+      "keyPoints": ["Rest −52 mV, threshold −45 mV, refractory 2.2 ms (22 ticks of 0.1 ms).", "Leak: `dv = ((v_rest − v) * alpha_m) >> 16` with alpha_m = 327.", "Synaptic input G decays by `g >> 6` every tick.", "|v_rest − v| · alpha_m ≤ 38 mV · 65536 · 327 < 2³¹, so no 64-bit maths is needed."],
+      "glossary": [{ "term": "Q16.16", "def": "Fixed point with 16 fractional bits; the integer 65536 means 1.0." }, { "term": "refractory", "def": "A short period after a spike when the neuron cannot fire again." }],
+      "lesson": [
+        "Floating point is optional. A neuron's voltage is one `int32`; one millivolt is `65536`. The leak pulls the voltage toward rest, the synaptic input pushes it up or down, and crossing −45 mV makes a spike.",
+        { "type": "code", "lang": "c", "code": "g  = G[i];  G[i] = g - (g >> 6);\nif (refrac[i]) { refrac[i]--; continue; }\ndv = ((v_rest - V[i]) * alpha_m) >> 16;\nvn = V[i] + dv + g + I_ext[i];\nif (vn >= v_thresh) { V[i] = v_rest; spike(i); }" }
+      ],
+      "quiz": [
+        { "q": "In Q16.16, what integer represents −52 mV?", "options": ["−52", "−3,407,872", "−52,000"], "answer": 1, "explain": "−52 × 65536 = −3,407,872." }
+      ],
+      "cards": [{ "q": "Why is 32-bit maths enough for the leak?", "a": "The product is at most about 8.1e8, below 2^31." }],
+      "practice": [
+        { "type": "fill", "intro": "Fill in the blanks.", "text": "One millivolt is {{65536}} in Q16.16, so the threshold of −45 mV is {{-2949120}}." }
+      ]
+    },
+    {
+      "title": "INT4 vs ternary synapses",
+      "summary": ["FlyQ4 stores each weight in 4 bits (−8..+7). FlyQ2 stores 2 bits: {−1, 0, +1}, so four weights fit in one byte.", "Ternary decoding is a 4-entry lookup table: no sign extension, no multiply."],
+      "keyPoints": ["INT4 divides counts by about 2 and never rounds a real synapse to 0.", "Ternary keeps only the sign.", "A deadzone θ drops edges with |w| < θ and shrinks the graph.", "A per-polarity gain sets the size of one + or − step."],
+      "glossary": [{ "term": "deadzone θ", "def": "Edges with |count| below θ are removed from the ternary graph." }, { "term": "LUT", "def": "A tiny table mapping each 2-bit code to its Q16.16 post-synaptic contribution." }],
+      "lesson": [
+        "Four ternary weights share a byte. Code `00` means no connection, `01` is excitatory, `10` is inhibitory and `11` is unused.",
+        { "type": "code", "lang": "js", "code": "// edge e's code inside the packed byte array\nconst bits = (weights[e >> 2] >> ((e & 3) << 1)) & 3;\nconst delta = [0, +aE, -aI, 0][bits];" }
+      ],
+      "quiz": [
+        { "q": "How many ternary weights fit in one byte?", "options": ["2", "4", "8"], "answer": 1, "explain": "Two bits each, so four per byte." },
+        { "q": "What does the deadzone θ do?", "options": ["Raises the spike threshold", "Removes weak edges", "Slows the clock"], "answer": 1, "explain": "Edges with |count| < θ are dropped, so there is less work per spike." }
+      ],
+      "cards": [{ "q": "Ternary code 10 means?", "a": "An inhibitory synapse (−)." }],
+      "practice": [
+        { "type": "match", "intro": "Match each 2-bit code to its meaning.", "pairs": [["00", "no connection"], ["01", "excitatory (+)"], ["10", "inhibitory (−)"], ["11", "unused"]] },
+        { "type": "code", "intro": "Write decode(byte, k): the ternary value (−1, 0 or +1) of the k-th (0–3) 2-bit code in a byte.", "fn": "decode", "starter": "function decode(byte, k) {\n  // return -1, 0 or 1\n}", "hint": "shift right by 2*k, mask with 3, then map 1→+1 and 2→−1",
+          "tests": [{ "args": [1, 0], "expect": 1 }, { "args": [2, 0], "expect": -1 }, { "args": [8, 1], "expect": -1 }, { "args": [64, 3], "expect": 1 }, { "args": [0, 2], "expect": 0 }, { "args": [255, 2], "expect": 0 }],
+          "solution": "function decode(byte, k) {\n  const b = (byte >> (2 * k)) & 3;\n  return b === 1 ? 1 : b === 2 ? -1 : 0;\n}" }
+      ]
+    },
+    {
+      "title": "The ternary paradox",
+      "summary": ["Plain ternary (every edge → ±1) fired 1.23× as many spikes as INT4 on the full brain and ran slower.", "A tick costs work proportional to spikes × out-degree, so extra spikes erased the cheaper decode.", "A deadzone plus a calibrated gain brings spikes back to ~0.98× and runs 1.45× faster. Per-neuron fidelity is only moderate (ρ≈0.63)."],
+      "keyPoints": ["Sign-only flattening weakens strong inhibitors more than the INT4 baseline does.", "Edge-ops (synaptic updates) is the hardware-independent cost metric.", "θ=3 with 'drive' gain keeps 33% of edges and 37% of synaptic work.", "The notebook's snapshot Jaccard (≈0.79) barely changes with θ; use rate correlation too."],
+      "glossary": [{ "term": "edge-ops", "def": "Number of synaptic updates performed; the real cost of a tick." }, { "term": "drive gain", "def": "Scale each polarity so total excitatory and inhibitory drive match INT4 after pruning." }],
+      "lesson": [
+        "More spikes means more edges walked per tick, so a cheaper edge does not help if there are 30% more of them. The fix is not a faster decoder but a better quantizer.",
+        { "type": "table", "title": "Full brain, 10,000 ticks (real results)", "head": ["config", "edges kept", "spikes ×INT4", "speed-up", "rate ρ"], "rows": [["θ=1 unit (plain ±1)", "100%", "1.23", "0.84×", "0.71"], ["θ=2 unit", "50%", "0.98", "1.29×", "0.69"], ["θ=3 drive (winner)", "33%", "0.98", "1.45×", "0.63"], ["θ=6 drive", "14%", "0.78", "1.90×", "0.43"], ["θ=12 drive", "5%", "0.46", "2.54×", "0.27"]] },
+        "There is no free lunch: the further you prune, the faster it runs and the less it resembles INT4's per-neuron activity."
+      ],
+      "quiz": [
+        { "q": "Why was plain ternary slower than INT4?", "options": ["Its decode is expensive", "It produced more spikes, so more edges were traversed", "It used more memory"], "answer": 1, "explain": "Cost scales with spikes × out-degree; 23% more spikes outweighed the cheaper decode." },
+        { "q": "Which metric is hardware-independent?", "options": ["Wall time", "Edge-ops", "Clock speed"], "answer": 1, "explain": "Edge-ops counts synaptic updates regardless of the machine." }
+      ],
+      "cards": [{ "q": "Winning configuration?", "a": "θ=3 with the drive gain: spikes ×0.98, 1.45× faster, 33% of edges." }],
+      "practice": [
+        { "type": "order", "intro": "Put the explanation of the paradox in order.", "items": ["Plain ternary flattens strong inhibitory synapses to −1", "Inhibition is weaker than in INT4", "The network fires about 23% more spikes", "Each spike walks its whole edge list", "Total synaptic work rises and the run is slower"] }
+      ]
+    }
+  ],
+  "finalExam": { "title": "FlyQ 101 exam", "passMark": 70, "size": 4, "questions": [
+    { "q": "How many bits does one ternary synapse use?", "options": ["1", "2", "4"], "answer": 1, "explain": "Two bits encode {0, +, −}." },
+    { "q": "What is the real cost driver of a connectome tick?", "options": ["Bits per weight", "Spikes × out-degree", "Number of neurons only"], "answer": 1, "explain": "Each spike walks its outgoing edges." },
+    { "q": "What does θ=3 do?", "options": ["Prunes edges with |count| < 3", "Triples the gain", "Sets a 3 ms refractory period"], "answer": 0, "explain": "It removes weak edges from the ternary graph." },
+    { "q": "Which is true of the θ=3 drive result?", "options": ["Per-neuron rates match INT4 exactly", "Spikes ≈0.98× INT4 and it is 1.45× faster", "It keeps all edges"], "answer": 1, "explain": "It matches activity in total, but per-neuron correlation is only about 0.63." }
+  ] }
+}

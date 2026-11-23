@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlyQ // INT4 vs Ternary whole-brain fly connectome, live in WebAssembly</title>
+<meta name="description" content="A real Drosophila connectome subnetwork running in your browser through a 2.6 KB WebAssembly engine: INT4 vs ternary synapses, and why the ternary one over-fires.">
+<link rel="stylesheet" href="style.css">
+<!-- Jade UI (jade-agent-ui-ux): optional. The page ships the same dark "jade" tokens in style.css, so it still looks right offline. -->
+<script type="module">
+  try {
+    const ui = await import('https://cdn.jsdelivr.net/gh/lucky-edgelord/Jade-agent-ui-ux@929fe39/dist/jade-ui.js');
+    await ui.setTheme({ preset: 'jade', mode: 'dark', backdrop: false });
+    document.documentElement.dataset.jadeUi = 'loaded';
+  } catch (e) { document.documentElement.dataset.jadeUi = 'offline'; }
+</script>
+</head>
+<body>
+<header class="top">
+  <nav>
+    <a class="on" href="#lab">Lab</a><a href="#quant">Quantize</a><a href="#paradox">Paradox</a><a href="#engine">Engine</a><a href="#esp32">ESP32</a>
+    <a href="course.html">Course ▸ edu</a><a href="https://github.com/lucky-edgelord/FlyQ4-">GitHub</a>
+  </nav>
+  <h1 class="glitch" data-t="FlyQ4 // FlyQ2">Fly<span class="q4">Q</span>4 <span style="color:var(--jade-muted)">//</span> Fly<span class="q4">Q</span>2</h1>
+  <p class="tag">A real fruit-fly <b>connectome</b> (FlyWire v783: <b>138,639</b> neurons, <b>15,091,983</b> synapses) simulated with <b>4-bit</b> or <b>ternary</b> synapses.
+  Below, a 3,000-neuron slice of the real wiring runs <b>in your browser</b> in a 2.6&nbsp;KB WebAssembly module. It is bit-for-bit the same engine as the C benchmark.</p>
+</header>
+
+<main>
+<section id="lab">
+  <h2><span class="n">01</span>Live lab</h2>
+  <p class="lede">Both brains get the same wiring, the same 150 stimulated neurons and the same neuron maths. Only the <em>synapse codec</em> differs. Press <b>THE PARADOX</b> to see ternary run hot, then <b>THE FIX</b>.</p>
+  <div class="controls">
+    <button class="go" id="play">⏸ Pause</button><button id="reset">↺ Reset</button>
+    <button class="hotb" id="p-paradox">The paradox (θ=1, unit)</button><button id="p-fix">The fix (θ=3, drive)</button>
+    <label>Deadzone θ <span class="val" id="thv">3</span><input id="theta" type="range" min="1" max="12" step="1" value="3"></label>
+    <label>Gain<select id="gain"><option value="unit">unit (plain ±1)</option><option value="twn">twn (mean |q4|)</option><option value="drive" selected>drive (match E/I drive)</option></select></label>
+    <label>Speed <span class="val" id="spv">50</span><input id="speed" type="range" min="10" max="200" step="10" value="50"></label>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h3>FlyQ4 · signed INT4 [−8,+7]</h3><canvas id="r4" height="260"></canvas>
+      <div class="stats" id="s4"></div></div>
+    <div class="panel hot"><h3>FlyQ2 · ternary {−1,0,+1}</h3><canvas id="r2" height="260"></canvas>
+      <div class="stats" id="s2"></div></div>
+  </div>
+  <div class="panel" style="margin-top:16px"><h3>Population firing rate (spikes per 5 ms)</h3><canvas id="pop" height="150"></canvas>
+    <div class="legend"><span><i style="background:var(--jade-accent)"></i>INT4</span><span><i style="background:var(--hot)"></i>ternary</span>
+    <span><i style="background:#1fe5a5"></i>raster: excitatory neuron</span><span><i style="background:var(--jade-danger)"></i>raster: inhibitory neuron</span></div>
+    <div class="verdict" id="verdict">warming up…</div></div>
+</section>
+
+<section id="quant">
+  <h2><span class="n">02</span>Quantize</h2>
+  <p class="lede">FlyWire stores each connection as a <b>synapse count</b> with a sign (<code>Excitatory × Connectivity</code>). INT4 squeezes it into 16 steps of about 2 synapses. Ternary keeps only its <em>sign</em> and, with a deadzone θ, drops weak edges entirely.</p>
+  <div class="grid2">
+    <div class="panel"><h3>Synapse-count histogram (this slice)</h3><canvas id="hist" height="200"></canvas><p class="note" id="histnote"></p></div>
+    <div class="panel"><h3>What one synapse becomes</h3>
+      <table id="ex"><thead><tr><th>count</th><th>INT4</th><th>INT4 PSP</th><th>ternary</th><th>ternary PSP</th></tr></thead><tbody></tbody></table>
+      <p class="note" id="lutnote"></p></div>
+  </div>
+  <div class="panel" style="margin-top:16px"><h3>Packing: the same edges as bytes</h3>
+    <div class="note">INT4 = 2 weights per byte (nibbles). Ternary = 4 weights per byte (2-bit codes: <code>00</code>=0 <code>01</code>=+ <code>10</code>=− <code>11</code>=unused). The decoder is a 4-entry lookup, so there is no sign-extension and no multiply.</div>
+    <div id="packs"></div></div>
+</section>
+
+<section id="paradox">
+  <h2><span class="n">03</span>The ternary paradox</h2>
+  <p class="lede">On the full brain, plain ternary (every edge → ±1) fired <b>1.23×</b> as many spikes as INT4 and ran <b>slower</b>, even though its decode is cheaper. A tick costs work proportional to spikes × out-degree, so the extra spikes ate the saving. The fix is a deadzone plus a calibrated gain. These are the real full-connectome results (10,000 ticks, 15.09 M edges, click a row to load it into the lab):</p>
+  <div class="grid2">
+    <div class="panel"><h3>Total spikes vs INT4</h3><canvas id="c-spk" height="230"></canvas></div>
+    <div class="panel"><h3>Speed-up vs INT4</h3><canvas id="c-spd" height="230"></canvas></div>
+  </div>
+  <div class="panel" style="margin-top:16px;overflow:auto"><h3>Sweep results · <span id="swmeta"></span></h3>
+    <table id="sw"><thead><tr><th>config</th><th>edges kept</th><th>spikes ×INT4</th><th>edge-ops ×</th><th>wall s</th><th>speed-up</th><th>rate ρ</th><th>snap. J</th></tr></thead><tbody></tbody></table>
+    <p class="note"><b>How to read it.</b> “edge-ops” is the hardware-independent cost (synaptic updates). “rate ρ” is the Spearman correlation of per-neuron firing counts with INT4. It stays at ≈0.6–0.7 at best: ternary keeps the <em>wiring</em>, but it does <b>not</b> reproduce INT4’s per-neuron activity closely. “snap. J” is the notebook’s final-snapshot Jaccard. It barely moves with θ, so it is a weak check.</p></div>
+</section>
+
+<section id="engine">
+  <h2><span class="n">04</span>Under the hood</h2>
+  <div class="grid2">
+    <div class="panel"><h3>Neuron update · Q16.16 fixed point</h3>
+<pre class="code"><span class="c">// every tick, for every neuron i (32-bit ints only)</span>
+g   = G[i];            G[i] = g - (g &gt;&gt; <span class="n">6</span>);        <span class="c">// synaptic decay</span>
+<span class="k">if</span> (refrac[i]) { refrac[i]--; <span class="k">continue</span>; }      <span class="c">// 2.2 ms refractory</span>
+dv  = ((v_rest - V[i]) * alpha_m) &gt;&gt; <span class="n">16</span>;  <span class="c">// leak, tau_m = 20 ms</span>
+vn  = V[i] + dv + g + I_ext[i];
+<span class="k">if</span> (vn &gt;= v_thresh) { V[i] = v_rest; spike(i); }
+<span class="k">else</span> V[i] = max(vn, <span class="n">-90</span> mV);</pre>
+      <p class="note">1 mV = 65536. <code>v_rest</code> −52 mV, threshold −45 mV, one INT4 step = 0.275 mV. <code>|v_rest−V|·alpha_m ≤ 38 mV·65536·327 &lt; 2³¹</code>, so even a 32-bit microcontroller reproduces the 64-bit host maths exactly.</p></div>
+    <div class="panel hot"><h3>Ternary synapse hot loop</h3>
+<pre class="code"><span class="c">// per spike u: walk its outgoing edges</span>
+<span class="k">for</span> (e = indptr[u]; e &lt; indptr[u+1]; e++) {
+  bits  = (weights[e &gt;&gt; <span class="n">2</span>] &gt;&gt; ((e &amp; <span class="n">3</span>) &lt;&lt; <span class="n">1</span>)) &amp; <span class="n">3</span>;
+  d     = indices[e];
+  G[d]  = clamp(G[d] + <span class="a">psp_lut[bits]</span>, ±<span class="n">64</span> mV);
+}
+<span class="c">// psp_lut = { 0, +aE·0.275mV, -aI·0.275mV, 0 }
+// aE, aI = per-polarity gains chosen by the sweep</span></pre>
+      <p class="note">The LUT is set at load time, so θ and the E/I gains cost nothing at run time. This is what makes a calibrated ternary model free compared with plain ternary.</p></div>
+  </div>
+  <div class="panel" style="margin-top:16px"><h3>Honest scope</h3>
+    <span class="pill warn">verified</span> WASM = C engine, tick for tick (4 configs, 1,500 ticks). ESP32 core = C engine, bit-exact (host-compiled).
+    <br><span class="pill warn">not verified</span> On-device ESP32 timing and the in-browser look of this page on every browser. <br>
+    <span class="pill warn">limits</span> The lab is a 3,000-neuron BFS slice of the real graph, so absolute rates differ from the whole brain. The full-brain numbers above come from the C engine.</div>
+</section>
+
+<section id="esp32">
+  <h2><span class="n">05</span>ESP32 port</h2>
+  <p class="lede">The whole brain does not fit a microcontroller, so the port runs a stimulus-centred subnetwork. The ESP32 core is the same maths in 32-bit integers, with 16-bit indices, 2-bit weights and hot loops in IRAM.</p>
+  <div class="panel"><table id="espt"></table>
+  <p class="note">Export: <code>python tools/export_esp32.py --n 4096 --theta 3 --gain drive</code>, then <code>idf.py -C esp32 set-target esp32s3 build flash monitor</code>. See <a href="esp32.md">esp32.md</a>.</p></div>
+</section>
+</main>
+<footer>
+  Data: FlyWire v783 via <a href="https://github.com/eonsystemspbc/fly-brain">eonsystemspbc/fly-brain</a> · Engine: C → WebAssembly (no libc) · Theme: <a href="https://github.com/lucky-edgelord/jade-agent-ui-ux">Jade UI</a> tokens ·
+  Teaching: <a href="course.html">jade-edu course</a> · Details: <a href="ternary-paradox.md">ternary-paradox.md</a>
+</footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>

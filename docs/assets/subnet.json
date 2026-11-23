@@ -1,0 +1,15 @@
+{
+  "source": "FlyWire v783 (eonsystemspbc/fly-brain)",
+  "neurons": 3000,
+  "edges": 74765,
+  "stimulated": 150,
+  "crop": "BFS from first-150 stimulus, |w|>=2",
+  "exc_frac": 0.5356115829599412,
+  "root_ids_first": [
+    720575940596125868,
+    720575940597856265,
+    720575940597944841,
+    720575940598267657,
+    720575940599333574
+  ]
+}
