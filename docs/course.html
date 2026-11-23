@@ -1,9 +1,24 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#040807">
 <title>FlyQ 101 · jade-edu course</title>
-<style>html,body{margin:0;height:100%;background:#040807}jade-course{height:100vh}
-.back{position:fixed;top:8px;right:12px;z-index:9;font:600 12px 'Rajdhani',system-ui;letter-spacing:.18em;text-transform:uppercase;color:#1fe5a5;text-decoration:none;border:1px solid #1d6b52;padding:4px 12px;background:#09100e}</style>
+<style>html,body{margin:0;height:100%;background:#040807}jade-course{display:block;height:100vh;height:100dvh}
+.back{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));z-index:9;font:600 12px 'Rajdhani',system-ui;letter-spacing:.18em;text-transform:uppercase;color:#1fe5a5;text-decoration:none;border:1px solid #1d6b52;padding:8px 14px;background:#09100e;opacity:.92;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+@media(min-width:900px){.back{top:12px;right:120px;bottom:auto;padding:4px 12px}}</style>
 <!-- jade-edu course player, pinned to the commit listed in jade-agent-stack's STACK.md -->
 <script type="module" src="https://cdn.jsdelivr.net/gh/lucky-edgelord/jade-edu@82e877f/src/edu.js"></script>
 </head><body><a class="back" href="index.html">◂ Live lab</a>
-<jade-course src="flyq.course.json"></jade-course></body></html>
+<jade-course src="flyq.course.json"></jade-course>
+<script>
+/* The player's grid has a ~477px content minimum, which makes phones scroll sideways (jade-edu's own example does too).
+   Its shadow root is open, so on narrow screens we let the single column shrink and the tab strip scroll. */
+(function () {
+  var css = '@media (max-width:700px){.app{grid-template-columns:minmax(0,1fr)!important}.tabs{overflow-x:auto;scrollbar-width:none}.bar,main,.view{min-width:0}}';
+  function patch() {
+    var el = document.querySelector('jade-course'), root = el && el.shadowRoot;
+    if (!root || !root.querySelector('.app')) return setTimeout(patch, 150);
+    var st = document.createElement('style'); st.textContent = css; root.appendChild(st);
+  }
+  patch();
+})();
+</script></body></html>

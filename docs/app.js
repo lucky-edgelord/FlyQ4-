@@ -145,7 +145,7 @@ function buildSweep(sw) {
     const all = r.map((x) => x[key]), lo = 0, hi = Math.max(...all, ref) * 1.1, X = (i) => pad + i / (thetas.length - 1) * (W - pad - 10 * dpr), Y = (v) => H - pad - (v - lo) / (hi - lo) * (H - pad - 10 * dpr);
     ctx.strokeStyle = C.grid; ctx.fillStyle = C.mut; ctx.font = `${10 * dpr}px monospace`;
     for (let g = 0; g <= 4; g++) { const v = lo + (hi - lo) * g / 4; ctx.beginPath(); ctx.moveTo(pad, Y(v)); ctx.lineTo(W, Y(v)); ctx.stroke(); ctx.fillText(v.toFixed(2), 0, Y(v) + 3 * dpr); }
-    thetas.forEach((t, i) => ctx.fillText('θ' + t, Math.min(X(i) - 8 * dpr, W - 26 * dpr), H - 8 * dpr));
+    thetas.forEach((t, i) => ctx.fillText(String(t), Math.min(X(i) - 8 * dpr, W - 26 * dpr), H - 8 * dpr));
     ctx.strokeStyle = C.hot; ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.beginPath(); ctx.moveTo(pad, Y(ref)); ctx.lineTo(W, Y(ref)); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = C.hot; ctx.fillText(label, W - 80 * dpr, Y(ref) - 4 * dpr);
     gains.forEach((g, gi) => { ctx.strokeStyle = cols[gi]; ctx.lineWidth = 2 * dpr; ctx.beginPath(); thetas.forEach((t, i) => { const row = r.find((x) => x.theta === t && x.gain === g); i ? ctx.lineTo(X(i), Y(row[key])) : ctx.moveTo(X(i), Y(row[key])); }); ctx.stroke(); ctx.fillStyle = cols[gi]; ctx.fillText(g, W - 40 * dpr, Y(r.find((x) => x.theta === thetas.at(-1) && x.gain === g)[key]) - 4 * dpr * (gi - 1)); });
