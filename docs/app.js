@@ -21,6 +21,10 @@ async function boot() {
   buildSweep(sw); buildEsp();
   await rebuild();
   wire(); requestAnimationFrame(loop);
+  // ?warm=N pre-runs N frames (README screenshots); ?t=1&g=unit starts from a config
+  const q = new URLSearchParams(location.search);
+  if (q.has('t')) setCfgNow(+q.get('t'), q.get('g') || 'unit');
+  if (q.has('warm')) { await rebuild(); for (let i = 0; i < +q.get('warm'); i++) frame(); }
 }
 
 const inst = async () => new FlyWasm((await WebAssembly.instantiate(module, {})).exports);
@@ -59,6 +63,9 @@ function loop(ts) {
   requestAnimationFrame(loop);
   if (!state.playing || !A) return;
   if (ts - last < 16) return; last = ts;
+  frame();
+}
+function frame() {
   const S = state.speed, ra = step(A, acc.a, S), rb = step(B, acc.b, S);
   scroll($('r4'), ra, S); scroll($('r2'), rb, S);
   for (const [k, r] of [['a', ra], ['b', rb]]) for (let i = 0; i < S; i += 50) rate[k].push(r.counts.slice(i, i + 50).reduce((x, y) => x + y, 0));
@@ -74,8 +81,8 @@ function renderStats() {
   $('s2').innerHTML = stat('spikes', fmt(acc.b.spikes)) + stat('mean rate', hz(acc.b)) + stat('edge-ops', fmt(acc.b.ops)) + stat('wasm / tick', us(acc.b));
   const v = $('verdict');
   if (acc.a.ticks < 1500) { v.className = 'verdict'; v.textContent = 'warming up…'; return; }
-  const r = acc.b.spikes / Math.max(1, acc.a.spikes), o = acc.b.ops / Math.max(1, acc.a.ops), t = (acc.b.ms / acc.b.ticks) / (acc.a.ms / acc.a.ticks);
-  const base = `ternary / INT4 → spikes <b>×${r.toFixed(2)}</b> · edge-ops <b>×${o.toFixed(2)}</b> · time/tick <b>×${t.toFixed(2)}</b> · wiring kept <b>${(100 * ternary.kept / sub.nnz).toFixed(0)}%</b>. `;
+  const r = acc.b.spikes / Math.max(1, acc.a.spikes), o = acc.b.ops / Math.max(1, acc.a.ops), t = acc.a.ms > 0 ? (acc.b.ms / acc.b.ticks) / (acc.a.ms / acc.a.ticks) : NaN;
+  const base = `ternary / INT4 → spikes <b>×${r.toFixed(2)}</b> · edge-ops <b>×${o.toFixed(2)}</b> · time/tick <b>${isNaN(t) ? '–' : '×' + t.toFixed(2)}</b> · wiring kept <b>${(100 * ternary.kept / sub.nnz).toFixed(0)}%</b>. `;
   if (r > 1.1) { v.className = 'verdict bad'; v.innerHTML = base + 'Ternary is <b>hyper-active</b>: flattening every synapse to ±1 weakened the strong inhibitory connections more than the excitatory ones.'; }
   else if (r < 0.9) { v.className = 'verdict'; v.innerHTML = base + 'Ternary is <b>under-driven</b>: pruning removed more drive than the gain puts back. Lower θ or raise the gain.'; }
   else { v.className = 'verdict ok'; v.innerHTML = base + 'Activity is <b>matched</b> to INT4' + (o < 0.9 ? ' with far less synaptic work. This is the fix.' : ', but it keeps most edges, so there is no saving yet.'); }
@@ -152,6 +159,7 @@ function buildEsp() {
   $('espt').innerHTML = rows.map(([a, b]) => `<tr><td>${a}</td><td style="text-align:left">${b}</td></tr>`).join('');
 }
 
+function setCfgNow(t, g) { state.theta = t; state.gain = g; $('theta').value = t; $('thv').textContent = t; $('gain').value = g; }
 function setCfg(t, g) { state.theta = t; state.gain = g; $('theta').value = t; $('thv').textContent = t; $('gain').value = g; rebuild(); }
 function wire() {
   $('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '⏸ Pause' : '▶ Play'; };

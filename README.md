@@ -2,11 +2,23 @@
 
 Simulates the FlyWire v783 connectome (138,639 neurons, 15,091,983 synapses) with a C Q16.16 integer engine and two synapse codecs: **FlyQ4** (signed INT4) and **FlyQ2** (ternary, 2-bit).
 
-**Live demo + course:** `docs/index.html` (WebAssembly lab, Jade UI theme) and `docs/course.html` (jade-edu course). Serve `docs/` with any static server, or enable GitHub Pages on `/docs`.
+**Live demo:** <https://lucky-edgelord.github.io/FlyQ4-/> · **Course:** <https://lucky-edgelord.github.io/FlyQ4-/course.html> (needs GitHub Pages: Settings → Pages → `main` / `/docs`). Or run it locally: `python -m http.server -d docs`.
+
+![The lab: the same real connectome slice with INT4 synapses (left) and ternary synapses (right), running in WebAssembly](docs/img/lab-fix.webp)
+
+*The live lab, at the fixed setting (θ=3, drive gain): ternary matches INT4's total spikes (×1.04 on this slice) with 45% of the synaptic work.*
 
 ## The ternary paradox, fixed
 
+![Plain ternary (θ=1, unit gain) fires 1.33x as many spikes as INT4 on the slice](docs/img/lab-paradox.webp)
+
+*Plain ternary (θ=1, unit gain) on the same slice: ×1.33 spikes and ×1.52 synaptic work. The full brain gave ×1.23.*
+
 The A/B notebook's ternary model was `np.sign(w)`: no threshold, every edge → ±1. It fired 1.23× the INT4 spikes and was slower. `flyq4.quant.ternarize` adds a **deadzone θ** (weak edges are removed) and **per-polarity gains** (free: they live in the 4-entry LUT). On the real data, **θ=3 + `drive` gain** gives spikes ×0.98, 1.45× faster, 33% of edges. Fidelity caveats are in [docs/ternary-paradox.md](docs/ternary-paradox.md); per-neuron rate correlation is only ≈0.63.
+
+![Full-connectome sweep: total spikes and speed-up versus INT4 for each θ and gain](docs/img/sweep-charts.webp)
+
+![Quantization lab: weight histogram, what one synapse becomes, and how the weights pack into bytes](docs/img/quantize.webp)
 
 ```sh
 pip install -r requirements.txt
